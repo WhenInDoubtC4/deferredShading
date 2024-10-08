@@ -1,8 +1,12 @@
-#version 450
+//#version specified in C++
+
+#if __VERSION__ < 400
+precision highp float;
+#endif
 
 #define SHADING_MODEL_COLOR_MATCH_TRESHOLD 0.1
 
-struct Material
+struct Material 
 {
 	float ambientStrength;
 	float diffuseStrength;
@@ -12,11 +16,11 @@ struct Material
 
 in vec2 UV;
 
-uniform layout(binding = 0) sampler2D _gPosition;
-uniform layout(binding = 1) sampler2D _gNormal;
-uniform layout(binding = 2) sampler2D _gAlbedo;
-uniform layout(binding = 3) sampler2D _gShadingModel;
-uniform layout(binding = 4) sampler2D _gShadowMap;
+uniform sampler2D _gPosition;
+uniform sampler2D _gNormal;
+uniform sampler2D _gAlbedo;
+uniform sampler2D _gShadingModel;
+uniform sampler2D _gShadowMap;
 
 uniform mat4 _lightViewProjection;
 
@@ -45,12 +49,12 @@ float calcShadow(sampler2D shadowMap, vec3 normal, vec3 toLight, vec4 lightSpace
 
 	//PCF filtering
 	float totalShadow = 0.0;
-	vec2 texelOffset = 1.0 / textureSize(_gShadowMap, 0);
+	vec2 texelOffset = vec2(1.0) / vec2(textureSize(_gShadowMap, 0));
 	for (int y = -1; y <= 1; y++)
 	{
 		for (int x = -1; x <= 1; x++)
 		{
-			vec2 uv = samplerCoord.xy + vec2(x * texelOffset.x, y * texelOffset.y);
+			vec2 uv = samplerCoord.xy + vec2(float(x) * texelOffset.x, float(y) * texelOffset.y);
 			totalShadow += step(texture(_gShadowMap, uv).r, depth);
 		}
 	}
@@ -69,7 +73,7 @@ void main()
 		return;
 	}
 
-	vec4 lightSpacePos = _lightViewProjection * texture(_gPosition, UV);
+	vec4 lightSpacePos = _lightViewProjection * vec4(texture(_gPosition, UV).xyz, 1.0);
 
 	vec3 normal = texture(_gNormal, UV).rgb;
 	vec3 position = texture(_gPosition, UV).xyz;
@@ -91,4 +95,6 @@ void main()
 	light *= 1.0 - shadow;
 
 	FragColor = vec4(albedo * light, 1.0);
+
+	//FragColor = vec4(texture(_gAlbedo, UV).rgb, 1.0);
 }

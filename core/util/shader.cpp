@@ -9,6 +9,8 @@
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+std::string lastKnownFilepath = "<INLINE>";
+
 namespace Util 
 {
 	/// <summary>
@@ -17,12 +19,21 @@ namespace Util
 	/// <param name="filePath"></param>
 	/// <returns></returns>
 	std::string loadShaderSourceFromFile(const std::string& filePath) {
+		lastKnownFilepath = filePath;
 		std::ifstream fstream(filePath);
 		if (!fstream.is_open()) {
-			printf("Failed to load file %s", filePath.c_str());
+			printf("Failed to load file %s\n", filePath.c_str());
 			return {};
 		}
 		std::stringstream buffer;
+
+		//Add shader version directive
+#ifdef EMSCRIPTEN
+		buffer << "#version 300 es\n";
+#else
+		buffer << "#version 450\n";
+#endif
+
 		buffer << fstream.rdbuf();
 		return buffer.str();
 	}
@@ -46,7 +57,7 @@ namespace Util
 			//512 is an arbitrary length, but should be plenty of characters for our error message.
 			char infoLog[512];
 			glGetShaderInfoLog(shader, 512, NULL, infoLog);
-			printf("Failed to compile shader: %s", infoLog);
+			printf("Failed to compile shader %s: %s\n", lastKnownFilepath.c_str(), infoLog);
 		}
 		return shader;
 	}
@@ -72,7 +83,7 @@ namespace Util
 		if (!success) {
 			char infoLog[512];
 			glGetProgramInfoLog(shaderProgram, 512, NULL, infoLog);
-			printf("Failed to link shader program: %s", infoLog);
+			printf("Failed to link shader program %s: %s", lastKnownFilepath.c_str(), infoLog);
 		}
 		//The linked program now contains our compiled code, so we can delete these intermediate objects
 		glDeleteShader(vertexShader);
@@ -141,6 +152,12 @@ namespace Util
 		glUniformMatrix4fv(glGetUniformLocation(m_id, name.c_str()), 1, GL_FALSE, glm::value_ptr(m));
 	}
 
+	void Shader::setUniformBlock(const std::string& name, int value) const
+	{
+		glUniformBlockBinding(m_id, glGetUniformBlockIndex(m_id, name.c_str()), value);
+	}
+
+#ifndef EMSCRIPTEN
 	void Shader::setSubroutine(GLenum shaderType, std::initializer_list<std::pair<std::string, std::string>> nameSelectionList)
 	{
 		//From https://www.informit.com/articles/article.aspx?p=2731929&seqNum=6
@@ -151,6 +168,7 @@ namespace Util
 		for (const std::pair<std::string, std::string>& nameSelection : nameSelectionList)
 		{
 			GLint uniformLocation = glGetSubroutineUniformLocation(m_id, shaderType, nameSelection.first.c_str());
+
 			if (uniformLocation < 0)
 			{
 				printf("Can't find subroutine %s\n", nameSelection.first.c_str());
@@ -177,6 +195,7 @@ namespace Util
 
 		delete[] indices;
 	}
+#endif
 
 }
 

@@ -2,7 +2,13 @@
 #include <math.h>
 #include <map>
 
+#ifdef EMSCRIPTEN
+#include <GLFW/emscripten_glfw3.h>
+#include <GLES3/gl3.h>
+#include <emscripten/html5.h>
+#else
 #include <ew/external/glad.h>
+#endif
 
 #include <GLFW/glfw3.h>
 #include <imgui.h>
@@ -22,6 +28,14 @@
 #include <util/shader.h>
 
 #include "mainGlobals.h"
+
+#ifdef EMSCRIPTEN
+void glBindTextureUnit(GLuint unit, GLuint texture)
+{
+	glActiveTexture(GL_TEXTURE0 + unit);
+	glBindTexture(GL_TEXTURE_2D, texture);
+}
+#endif
 
 void framebufferSizeCallback(GLFWwindow* window, int width, int height);
 GLFWwindow* initWindow(const char* title, int width, int height);
@@ -45,10 +59,10 @@ void createPostprocessFramebuffer(int width, int height)
 
 	//GBuffer (with 3 color attachments + depth)
 	gBuffer = Util::Framebuffer(glm::vec2(width, height));
-	gBuffer.addColorAttachment(GL_RGB32F); //World position
-	gBuffer.addColorAttachment(GL_RGB16F); //World normal
-	gBuffer.addColorAttachment(GL_RGB16F); //Albedo
-	gBuffer.addColorAttachment(GL_RGB16F); //Shading model
+	gBuffer.addColorAttachment(GL_RGBA32F); //World position
+	gBuffer.addColorAttachment(GL_RGBA16F); //World normal
+	gBuffer.addColorAttachment(GL_RGBA16F); //Albedo
+	gBuffer.addColorAttachment(GL_RGBA16F); //Shading model
 	gBuffer.addDepthAttachment(); //Depth buffer
 	if (!gBuffer.isComplete()) printf("ERROR: G-buffer is not complete!\n");
 
@@ -88,10 +102,13 @@ void setupScene()
 	glBindTexture(GL_TEXTURE_2D, shadowFramebuffer.addDepthAttachment());
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+#ifndef EMSCRIPTEN
 	float boderColor[4] = { 1.f, 1.f, 1.f, 1.f };
 	glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, boderColor);
+#endif
+	glBindTexture(GL_TEXTURE_2D, 0);
 
 	//Point light UBO
 	glGenBuffers(1, &lightsUBO);
@@ -110,8 +127,8 @@ void setupScene()
 	//Model setup
 	monkeyModel = new Util::Model("assets/Suzanne.obj");
 	//Using a basic plane mesh from Maya since procGen doesn't calculate TBN
-	planeModel = new Util::Model("assets/plane.fbx");
-	sphereModel = new Util::Model("assets/sphere.fbx");
+	planeModel = new Util::Model("assets/plane_new.obj");
+	sphereModel = new Util::Model("assets/sphere_new.obj");
 
 	//Load textures
 	brickColorTexture = ew::loadTexture("assets/brick2_color.jpg");
@@ -135,6 +152,8 @@ void cleanup()
 	delete monkeyModel;
 	delete planeModel;
 	delete sphereModel;
+
+	printf("Shutting down...");
 }
 
 const auto SHADING_MODEL_TO_COLOR = std::map<ShadingModel, glm::vec3>
@@ -217,10 +236,15 @@ void drawScene(Util::Shader* shader, const glm::mat4& viewMatrix)
 			
 			if constexpr (S == ShaderPass::GEOMETRY_PASS)
 			{
+#ifdef EMSCRIPTEN
+				gBufferShader->setInt("_albedoFunction", 0);
+				gBufferShader->setInt("_normalFunction", 0);
+#else
 				gBufferShader->setSubroutine(GL_FRAGMENT_SHADER, {
 					std::make_pair("_albedoFunction", "albedoFromTexture"),
 					std::make_pair("_normalFunction", "normalFromTexture")
 				});
+#endif
 			}
 			gBufferShader->setVec3("_shadingModelColor", SHADING_MODEL_TO_COLOR.at(ShadingModel::LIT));
 
@@ -235,10 +259,15 @@ void drawScene(Util::Shader* shader, const glm::mat4& viewMatrix)
 			//Lights
 			else if constexpr (S == ShaderPass::GEOMETRY_PASS)
 			{
+#ifdef EMSCRIPTEN
+				gBufferShader->setInt("_albedoFunction", 1);
+				gBufferShader->setInt("_normalFunction", 1);
+#else
 				gBufferShader->setSubroutine(GL_FRAGMENT_SHADER, {
 					std::make_pair("_albedoFunction", "albedoFromColor"),
 					std::make_pair("_normalFunction", "normalFromMesh")
 				});
+#endif
 				gBufferShader->setVec3("_shadingModelColor", SHADING_MODEL_TO_COLOR.at(ShadingModel::UNLIT));
 			}
 
@@ -270,8 +299,189 @@ void drawScene(Util::Shader* shader, const glm::mat4& viewMatrix)
 	}
 }
 
+GLFWwindow* window;
+GLuint screenVAO;
+
+void loop()
+{
+	glfwPollEvents();
+
+	float time = (float)glfwGetTime();
+	deltaTime = time - prevFrameTime;
+	prevFrameTime = time;
+
+	cameraController.move(window, &camera, deltaTime);
+	camera.fov = cameraFov;
+
+	glBindTextureUnit(0, gBuffer.getDepthAttachment());
+	glBindTextureUnit(1, currentColorTexture);
+	glBindTextureUnit(2, currentNormalTexture);
+
+	//GBuffer geometry pass
+	glCullFace(GL_BACK);
+	glBindFramebuffer(GL_FRAMEBUFFER, gBuffer.getFBO());
+	glViewport(0, 0, gBuffer.getSize().x, gBuffer.getSize().y);
+	glClearColor(0.f, 0.f, 0.f, 1.f);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	drawScene<ShaderPass::GEOMETRY_PASS>(gBufferShader, camera.projectionMatrix() * camera.viewMatrix());
+	gBufferShader->setInt("_mainTex", 1);
+	gBufferShader->setInt("_normalTex", 2);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	//Shadow map pass
+	glCullFace(GL_FRONT);
+	glBindFramebuffer(GL_FRAMEBUFFER, shadowFramebuffer.getFBO());
+	glViewport(0, 0, shadowFramebuffer.getSize().x, shadowFramebuffer.getSize().y);
+	glClear(GL_DEPTH_BUFFER_BIT);
+
+	glm::mat4 lightView = glm::lookAt(directionalLight.position, glm::vec3(0.f, 0.f, 0.f), glm::vec3(0.f, 1.f, 0.f));
+	glm::mat4 lightMatrix = directionalLight.projectionMatrix() * lightView;
+	drawScene<ShaderPass::DEPTH_ONLY>(depthOnlyShader, lightMatrix);
+
+	//TODO: Draw to post process buffer
+#ifdef EMSCRIPTEN
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+#else
+	glBindFramebuffer(GL_FRAMEBUFFER, postprocessFramebuffer.getFBO());
+#endif
+
+	//Deferred lit pass
+	glCullFace(GL_BACK);
+#ifdef EMSCRIPTEN
+	glViewport(0, 0, gBuffer.getSize().x, gBuffer.getSize().y);
+#else
+	glViewport(0, 0, postprocessFramebuffer.getSize().x, postprocessFramebuffer.getSize().y);
+#endif
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	glBindTextureUnit(0, gBuffer.getColorAttachment(0));
+	glBindTextureUnit(1, gBuffer.getColorAttachment(1));
+	glBindTextureUnit(2, gBuffer.getColorAttachment(2));
+	glBindTextureUnit(3, gBuffer.getColorAttachment(3));
+	glBindTextureUnit(4, shadowFramebuffer.getDepthAttachment());
+
+#ifdef EMSCRIPTEN
+	glBindBuffer(GL_UNIFORM_BUFFER, lightsUBO);
+	glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(pointLights), pointLights);
+	glBindBuffer(GL_UNIFORM_BUFFER, 0);
+#else
+	glNamedBufferSubData(lightsUBO, 0, sizeof(pointLights), pointLights);
+#endif
+
+	deferredLitShader->use();
+	deferredLitShader->setInt("_gPosition", 0);
+	deferredLitShader->setInt("_gNormal", 1);
+	deferredLitShader->setInt("_gAlbedo", 2);
+	deferredLitShader->setInt("_gShadingModel", 3);
+	deferredLitShader->setInt("_gShadowMap", 4);
+	deferredLitShader->setMat4("_lightViewProjection", lightMatrix);
+	deferredLitShader->setVec3("_litShadingModelColor", SHADING_MODEL_TO_COLOR.at(ShadingModel::LIT));
+	deferredLitShader->setVec3("_unlitShadingModelColor", SHADING_MODEL_TO_COLOR.at(ShadingModel::UNLIT));
+	deferredLitShader->setVec3("_cameraPosition", camera.position);
+	deferredLitShader->setVec3("_lightPosition", directionalLight.position);
+	deferredLitShader->setFloat("_shadowBrightness", shadowBrightness);
+	deferredLitShader->setFloat("_shadowMinBias", shadowMinBias);
+	deferredLitShader->setFloat("_shadowMaxBias", shadowMaxBias);
+	deferredLitShader->setVec3("_ambientColor", ambientColor);
+	deferredLitShader->setVec3("_lightColor", lightColor);
+	deferredLitShader->setFloat("_material.ambientStrength", material.ambientStrength);
+	deferredLitShader->setFloat("_material.diffuseStrength", material.diffuseStrength);
+	deferredLitShader->setFloat("_material.specularStrength", material.specularStrength);
+	deferredLitShader->setFloat("_material.shininess", material.shininess);
+
+	glBindVertexArray(screenVAO);
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+
+	//Light volumes
+	//glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glClear(GL_DEPTH_BUFFER_BIT);
+	lightVolumeShader->use();
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_ONE, GL_ONE);
+	glCullFace(GL_FRONT);
+	glDepthMask(GL_FALSE);
+	lightVolumeShader->setInt("_gPosition", 0);
+	lightVolumeShader->setInt("_gNormal", 1);
+	lightVolumeShader->setInt("_gAlbedo", 2);
+	lightVolumeShader->setInt("_gShadingModel", 3);
+	lightVolumeShader->setInt("_gShadowMap", 4);
+	lightVolumeShader->setUniformBlock("AdditionalLights", 5);
+	lightVolumeShader->setMat4("_view", camera.projectionMatrix() * camera.viewMatrix());
+	lightVolumeShader->setVec3("_cameraPosition", camera.position);
+	lightVolumeShader->setFloat("_material.ambientStrength", material.ambientStrength);
+	lightVolumeShader->setFloat("_material.diffuseStrength", material.diffuseStrength);
+	lightVolumeShader->setFloat("_material.specularStrength", material.specularStrength);
+	lightVolumeShader->setFloat("_material.shininess", material.shininess);
+#ifdef EMSCRIPTEN
+	lightVolumeShader->setInt("_attenuateFunction", attenuationMode);
+#else
+	lightVolumeShader->setSubroutine(GL_FRAGMENT_SHADER, {
+		std::make_pair("_attenuateFunction", attenuationMode == 0 ? "attenuateLinear" : "attenuateExponential")
+		});
+#endif
+
+	glBindTexture(GL_TEXTURE_2D, 0);
+
+	for (int i = 0; i < sceneGridSize * sceneGridSize * activeMonkeyLightColors.size(); i++)
+	{
+		lightVolumeShader->setInt("_lightIndex", i);
+		ew::Transform transform;
+		transform.position = pointLights[i].position;
+		transform.scale = glm::vec3(pointLights[i].radius);
+		lightVolumeShader->setMat4("_model", transform.modelMatrix());
+		sphereModel->draw();
+	}
+
+	glDisable(GL_BLEND);
+	glCullFace(GL_BACK);
+	glDepthMask(GL_TRUE);
+
+	//Post process pass
+#ifndef EMSCRIPTEN
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	glBindTextureUnit(0, postprocessFramebuffer.getColorAttachment());
+	glBindTextureUnit(1, postprocessFramebuffer.getDepthAttachment());
+	postprocessShader->use();
+
+#ifndef EMSCRIPTEN
+	postprocessShader->setSubroutine(GL_FRAGMENT_SHADER, {
+		std::make_pair("_blurFunction", boxBlurEnable ? "blurEnabled" : "blurDisabled"),
+		std::make_pair("_dofFunction", dofEnable ? "dofEnabled" : "dofDisabled"),
+		std::make_pair("_chromaticAberrationFunction", chromaticAberrationEnable ? "chromaticAberrationEnabled" : "chromaticAberrationDisabled") });
+#endif
+
+	postprocessShader->setInt("_colorBuffer", 0);
+	postprocessShader->setInt("_depthBuffer", 1);
+	postprocessShader->setVec2("_focusPoint", focusPoint);
+	postprocessShader->setInt("_boxBlurSize", boxBlurSize);
+	postprocessShader->setFloat("_chromaticAberrationSize", chromaticAberrationSize);
+	postprocessShader->setFloat("_dofMinDistance", dofMinDistance);
+	postprocessShader->setFloat("_dofMaxDistance", dofMaxDistance);
+	postprocessShader->setInt("_dofBlurSize", dofBlurSize);
+
+	glBindVertexArray(screenVAO);
+	glDrawArrays(GL_TRIANGLES, 0, 3);
+#endif
+
+	drawUI();
+
+#ifdef EMSCRIPTEN
+	if (glfwWindowShouldClose(window))
+	{
+		emscripten_cancel_main_loop();
+		cleanup();
+	}
+#endif
+
+	glfwSwapBuffers(window);
+}
+
 int main() {
-	GLFWwindow* window = initWindow("Assignment 3", screenWidth, screenHeight);
+	window = initWindow("Assignment 3", screenWidth, screenHeight);
 	glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
 	createPostprocessFramebuffer(screenWidth, screenHeight);
 	
@@ -279,148 +489,26 @@ int main() {
 	upateMonkeyLightColors();
 
 	//Create dummy VAO for screen
-	GLuint screenVAO;
+#ifdef EMSCRIPTEN
+	glGenVertexArrays(1, &screenVAO);
+#else
 	glCreateVertexArrays(1, &screenVAO);
+#endif
 
 	glEnable(GL_CULL_FACE);
 	//glCullFace(GL_BACK);
 	glEnable(GL_DEPTH_TEST);
 
-	while (!glfwWindowShouldClose(window)) {
-		glfwPollEvents();
-
-		float time = (float)glfwGetTime();
-		deltaTime = time - prevFrameTime;
-		prevFrameTime = time;		
-
-		cameraController.move(window, &camera, deltaTime);
-		camera.fov = cameraFov;
-
-		glBindTextureUnit(0, gBuffer.getDepthAttachment());
-		glBindTextureUnit(1, currentColorTexture);
-		glBindTextureUnit(2, currentNormalTexture);
-
-		//GBuffer geometry pass
-		glCullFace(GL_BACK);
-		glBindFramebuffer(GL_FRAMEBUFFER, gBuffer.getFBO());
-		glViewport(0, 0, gBuffer.getSize().x, gBuffer.getSize().y);
-		glClearColor(0.f, 0.f, 0.f, 1.f);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		
-		drawScene<ShaderPass::GEOMETRY_PASS>(gBufferShader, camera.projectionMatrix() * camera.viewMatrix());
-		gBufferShader->setInt("_mainTex", 1);
-		gBufferShader->setInt("_normalTex", 2);
-		
-		//Shadow map pass
-		glCullFace(GL_FRONT);
-		glBindFramebuffer(GL_FRAMEBUFFER, shadowFramebuffer.getFBO());
-		glViewport(0, 0, shadowFramebuffer.getSize().x, shadowFramebuffer.getSize().y);
-		glClear(GL_DEPTH_BUFFER_BIT);
-
-		glm::mat4 lightView = glm::lookAt(directionalLight.position, glm::vec3(0.f, 0.f, 0.f), glm::vec3(0.f, 1.f, 0.f));
-		glm::mat4 lightMatrix = directionalLight.projectionMatrix() * lightView;
-		drawScene<ShaderPass::DEPTH_ONLY>(depthOnlyShader, lightMatrix);
-
-		//TODO: Draw to post process buffer
-		//glBindFramebuffer(GL_FRAMEBUFFER, postprocessFramebuffer.getFBO());
-		glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-		//Deferred lit pass
-		glCullFace(GL_BACK);
-		glViewport(0, 0, gBuffer.getSize().x, gBuffer.getSize().y);
-		//glViewport(0, 0, postprocessFramebuffer.getSize().x, postprocessFramebuffer.getSize().y);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-		glBindTextureUnit(0, gBuffer.getColorAttachment(0));
-		glBindTextureUnit(1, gBuffer.getColorAttachment(1));
-		glBindTextureUnit(2, gBuffer.getColorAttachment(2));
-		glBindTextureUnit(3, gBuffer.getColorAttachment(3));
-		glBindTextureUnit(4, shadowFramebuffer.getDepthAttachment());
-
-		glNamedBufferSubData(lightsUBO, 0, sizeof(pointLights), pointLights);
-		
-		deferredLitShader->use();
-		deferredLitShader->setMat4("_lightViewProjection", lightMatrix);
-		deferredLitShader->setVec3("_litShadingModelColor", SHADING_MODEL_TO_COLOR.at(ShadingModel::LIT));
-		deferredLitShader->setVec3("_unlitShadingModelColor", SHADING_MODEL_TO_COLOR.at(ShadingModel::UNLIT));
-		deferredLitShader->setVec3("_cameraPosition", camera.position);
-		deferredLitShader->setVec3("_lightPosition", directionalLight.position);
-		deferredLitShader->setFloat("_shadowBrightness", shadowBrightness);
-		deferredLitShader->setFloat("_shadowMinBias", shadowMinBias);
-		deferredLitShader->setFloat("_shadowMaxBias", shadowMaxBias);
-		deferredLitShader->setVec3("_ambientColor", ambientColor);
-		deferredLitShader->setVec3("_lightColor", lightColor);
-		deferredLitShader->setFloat("_material.ambientStrength", material.ambientStrength);
-		deferredLitShader->setFloat("_material.diffuseStrength", material.diffuseStrength);
-		deferredLitShader->setFloat("_material.specularStrength", material.specularStrength);
-		deferredLitShader->setFloat("_material.shininess", material.shininess);
-
-		glBindVertexArray(screenVAO);
-		glDrawArrays(GL_TRIANGLES, 0, 3);
-
-		//Light volumes
-		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		glClear(GL_DEPTH_BUFFER_BIT);
-		lightVolumeShader->use();
-		glEnable(GL_BLEND);
-		glBlendFunc(GL_ONE, GL_ONE);
-		glCullFace(GL_FRONT);
-		glDepthMask(GL_FALSE);
-		lightVolumeShader->setMat4("_view", camera.projectionMatrix() * camera.viewMatrix());
-		lightVolumeShader->setVec3("_cameraPosition", camera.position);
-		lightVolumeShader->setFloat("_material.ambientStrength", material.ambientStrength);
-		lightVolumeShader->setFloat("_material.diffuseStrength", material.diffuseStrength);
-		lightVolumeShader->setFloat("_material.specularStrength", material.specularStrength);
-		lightVolumeShader->setFloat("_material.shininess", material.shininess);
-		lightVolumeShader->setSubroutine(GL_FRAGMENT_SHADER, {
-			std::make_pair("_attenuateFunction", attenuationMode == 0 ? "attenuateLinear" : "attenuateExponential")
-		});
-
-		for (int i = 0; i < sceneGridSize * sceneGridSize * activeMonkeyLightColors.size(); i++)
-		{
-			lightVolumeShader->setInt("_lightIndex", i);
-			ew::Transform transform;
-			transform.position = pointLights[i].position;
-			transform.scale = glm::vec3(pointLights[i].radius);
-			lightVolumeShader->setMat4("_model", transform.modelMatrix());
-			sphereModel->draw();
-		}
-
-		glDisable(GL_BLEND);
-		glCullFace(GL_BACK);
-		glDepthMask(GL_TRUE);
-
-		//Post process pass
-		//glBindFramebuffer(GL_FRAMEBUFFER, 0);
-		//glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
-		//glBindTextureUnit(0, postprocessFramebuffer.getColorAttachment());
-		//glBindTextureUnit(1, postprocessFramebuffer.getDepthAttachment());
-		//postprocessShader->use();
-
-		//postprocessShader->setSubroutine(GL_FRAGMENT_SHADER, {
-		//	std::make_pair("_blurFunction", boxBlurEnable ? "blurEnabled" : "blurDisabled"),
-		//	std::make_pair("_dofFunction", dofEnable ? "dofEnabled" : "dofDisabled"),
-		//	std::make_pair("_chromaticAberrationFunction", chromaticAberrationEnable ? "chromaticAberrationEnabled" : "chromaticAberrationDisabled") });
-
-		//postprocessShader->setVec2("_focusPoint", focusPoint);
-		//postprocessShader->setInt("_boxBlurSize", boxBlurSize);
-		//postprocessShader->setFloat("_chromaticAberrationSize", chromaticAberrationSize);
-		//postprocessShader->setFloat("_dofMinDistance", dofMinDistance);
-		//postprocessShader->setFloat("_dofMaxDistance", dofMaxDistance);
-		//postprocessShader->setInt("_dofBlurSize", dofBlurSize);
-
-		//glBindVertexArray(screenVAO);
-		//glDrawArrays(GL_TRIANGLES, 0, 3);
-
-		drawUI();
-
-		glfwSwapBuffers(window);
+#ifdef EMSCRIPTEN
+	emscripten_set_main_loop(loop, 0, GLFW_FALSE);
+#else
+	while (!glfwWindowShouldClose(window)) 
+	{
+		loop();
 	}
 
 	cleanup();
-
-	printf("Shutting down...");
+#endif
 }
 
 void drawUI() {
@@ -490,6 +578,7 @@ void drawUI() {
 			resetCamera(&camera, &cameraController);
 		}
 	}
+#ifndef EMSCRIPTEN
 	if (ImGui::CollapsingHeader("Post processing"))
 	{
 		ImGui::SliderFloat2("Focus point", &focusPoint[0], 0.0f, 1.f);
@@ -514,8 +603,10 @@ void drawUI() {
 		}
 		ImGui::Unindent();
 	}
+#endif
 	ImGui::End();
 
+	ImGui::SetNextWindowSizeConstraints(ImVec2(128, 128), ImVec2(FLT_MAX, FLT_MAX));
 	ImGui::Begin("Shadow map");
 	ImGui::BeginChild("Shadow map");
 	ImVec2 windowSize = ImGui::GetWindowSize();
@@ -525,10 +616,18 @@ void drawUI() {
 
 	ImGui::Begin("GBuffers");
 	ImVec2 texSize = ImVec2(gBuffer.getSize().x / 8.f, gBuffer.getSize().y / 8.f);
+	std::string labels[4] = {
+		"Position",
+		"Normal",
+		"Color",
+		"Shading model"
+	};
 	for (size_t i = 0; i < gBuffer.getNumColorAttachments(); i++)
 	{
-		ImGui::Image(reinterpret_cast<ImTextureID>(gBuffer.getColorAttachment(i)), texSize, ImVec2(0, 1), ImVec2(1, 0));
+		if (i <= 4) ImGui::Text(labels[i].c_str());
+		ImGui::Image(reinterpret_cast<ImTextureID>(gBuffer.getColorAttachment(i)), texSize, ImVec2(0, 1), ImVec2(1, 0), ImVec4(1.f, 1.f, 1.f, 1.f));
 	}
+	ImGui::Text("Depth");
 	ImGui::Image(reinterpret_cast<ImTextureID>(gBuffer.getDepthAttachment()), texSize, ImVec2(0, 1), ImVec2(1, 0));
 	ImGui::End();
 
@@ -567,10 +666,12 @@ GLFWwindow* initWindow(const char* title, int width, int height) {
 	}
 	glfwMakeContextCurrent(window);
 
+#ifndef EMSCRIPTEN
 	if (!gladLoadGL(glfwGetProcAddress)) {
 		printf("GLAD Failed to load GL headers");
 		return nullptr;
 	}
+#endif
 
 	//Initialize ImGUI
 	IMGUI_CHECKVERSION();

@@ -1,12 +1,17 @@
-#version 450
+//#version specified in C++
+
+#if __VERSION__ < 400
+precision highp float;
+#endif
 
 out vec4 FragColor;
 
 in vec2 UV;
 
-uniform layout(binding = 0) sampler2D _colorBuffer;
-uniform layout(binding = 1) sampler2D _depthBuffer;
+uniform sampler2D _colorBuffer;
+uniform sampler2D _depthBuffer;
 
+#if __VERSION__ > 400
 uniform vec2 _focusPoint;
 
 uniform int _boxBlurSize;
@@ -101,9 +106,11 @@ subroutine (ChromaticAberrationFunction) vec3 chromaticAberrationEnabled(sampler
 }
 
 subroutine uniform ChromaticAberrationFunction _chromaticAberrationFunction;
+#endif
 
 void main()
 {
+#if __VERSION__ > 400
 	vec2 texelSize = 1.0 / textureSize(_colorBuffer, 0).xy;
 
 	//For some reason not calling all of these will cause chaos
@@ -112,4 +119,7 @@ void main()
 	vec3 step3 = _chromaticAberrationFunction(_colorBuffer, _depthBuffer, texelSize, UV);
 
 	FragColor = vec4(step3, 1.0);
+#else
+	FragColor = vec4(texture(_colorBuffer, UV).rgb, 1.0);
+#endif
 }

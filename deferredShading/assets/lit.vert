@@ -1,4 +1,8 @@
-#version 450
+//#version specified in C++
+
+#if __VERSION__ < 400
+precision highp float;
+#endif
 
 layout(location = 0) in vec3 vPos;
 layout(location = 1) in vec3 vNormal;
@@ -10,12 +14,9 @@ uniform mat4 _model;
 uniform mat4 _view;
 uniform mat4 _lightViewProjection;
 
-out Surface
-{
-	vec3 pos;
-	mat3 tbn;
-	vec2 UV;
-} vs_out;
+out vec3 atr_pos;
+out mat3 atr_tbn;
+out vec2 atr_UV;
 
 void main()
 {
@@ -24,8 +25,8 @@ void main()
 	vec3 n = normalize(vec3(_model * vec4(vNormal, 0.0)));
 	mat3 tbn = mat3(t, b, n);
 
-	vs_out.pos = vec3(_model * vec4(vPos, 1.0));
-	vs_out.tbn = tbn;
-	vs_out.UV = vUV;
+	atr_pos = vec3(_model * vec4(vPos, 1.0));
+	atr_tbn = tbn;
+	atr_UV = vUV;
 	gl_Position = _view * _model * vec4(vPos, 1.0);
 }

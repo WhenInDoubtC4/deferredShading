@@ -1,11 +1,12 @@
-#version 450
+//#version specified in C++
 
-in Surface
-{
-	vec3 pos;
-	mat3 tbn;
-	vec2 UV;
-} fs_in;
+#if __VERSION__ < 400
+precision highp float;
+#endif
+
+vec3 atr_pos;
+mat3 atr_tbn;
+vec2 atr_UV;
 
 in vec4 vs_lightSpacePos;
 
@@ -59,11 +60,11 @@ float calcShadow(sampler2D shadowMap, vec3 normal, vec3 toLight, vec4 lightSpace
 void main()
 {
 	//Light calculations
-	vec3 normal = texture(_normalTex, fs_in.UV).rgb;
+	vec3 normal = texture(_normalTex, atr_UV).rgb;
 	normal = normalize(normal * 2.0 - 1.0);
-	vec3 _lightDirection = normalize(fs_in.pos - _lightPosition);
-	vec3 toLight =  fs_in.tbn * -_lightDirection;
-	vec3 toCamera = fs_in.tbn * normalize(_cameraPosition - fs_in.pos);
+	vec3 _lightDirection = normalize(atr_pos - _lightPosition);
+	vec3 toLight =  atr_tbn * -_lightDirection;
+	vec3 toCamera = atr_tbn * normalize(_cameraPosition - atr_pos);
 	float diffuseFactor = max(dot(normal, toLight), 0.0);
 	
 	//Specular reflection
@@ -76,7 +77,7 @@ void main()
 	light += _lightColor * diffuseFactor * _material.diffuseStrength;
 	light += _lightColor * specularFactor * _material.specularStrength;
 	light *= 1.0 - shadow;
-	vec3 object = texture(_mainTex, fs_in.UV).rgb;
+	vec3 object = texture(_mainTex, atr_UV).rgb;
 
 	FragColor = vec4(object * light, 1.0);
 }

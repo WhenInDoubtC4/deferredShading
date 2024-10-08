@@ -3,7 +3,14 @@
 */
 
 #include "texture.h"
+
+#ifdef EMSCRIPTEN
+#include <GLFW/emscripten_glfw3.h>
+#include <GLES3/gl3.h>
+#else
 #include "external/glad.h"
+#endif
+
 #include "external/stb_image.h"
 
 static int getTextureFormat(int numComponents) {
@@ -41,8 +48,10 @@ namespace ew {
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, magFilter);
 
 		//Black border by default
+#ifndef EMSCRIPTEN
 		float borderColor[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 		glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+#endif
 
 		if (mipmap) {
 			glGenerateMipmap(GL_TEXTURE_2D);

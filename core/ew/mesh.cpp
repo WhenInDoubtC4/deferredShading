@@ -6,7 +6,13 @@
 */
 
 #include "mesh.h"
+
+#ifdef EMSCRIPTEN
+#include <GLFW/emscripten_glfw3.h>
+#include <GLES3/gl3.h>
+#else
 #include "external/glad.h"
+#endif
 
 namespace ew {
 	Mesh::Mesh(const MeshData& meshData)

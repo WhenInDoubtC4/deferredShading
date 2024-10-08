@@ -24,7 +24,7 @@ namespace Util
 		//Delete previous attachments
 		_colorAttachments.clear();
 
-		glCreateFramebuffers(1, &_fbo);
+		glGenFramebuffers(1, &_fbo);
 	}
 
 	GLuint Framebuffer::addColorAttachment(GLenum colorFormat, GLint wrapS, GLint wrapT, GLint magFilter, GLint minFilter)
@@ -41,14 +41,23 @@ namespace Util
 
 		glGenTextures(1, &colorAttachment);
 		glBindTexture(GL_TEXTURE_2D, colorAttachment);
-		glTexStorage2D(GL_TEXTURE_2D, 1, colorFormat, _size.x, _size.y);
 
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrapS);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrapT);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minFilter);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, magFilter);
 
-		glFramebufferTexture(GL_FRAMEBUFFER, COLOR_ATTACHMENTS[_colorAttachments.size()], colorAttachment, 0);
+#ifdef EMSCRIPTEN
+		glTexImage2D(GL_TEXTURE_2D, 0, colorFormat, _size.x, _size.y, 0, GL_RGBA, GL_FLOAT, nullptr);
+#else
+		glTexStorage2D(GL_TEXTURE_2D, 1, colorFormat, _size.x, _size.y);
+#endif
+
+		glBindTexture(GL_TEXTURE_2D, 0);
+		
+		glFramebufferTexture2D(GL_FRAMEBUFFER, COLOR_ATTACHMENTS[_colorAttachments.size()], GL_TEXTURE_2D, colorAttachment, 0);
+
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 		_colorAttachments.push_back(colorAttachment);
 
@@ -64,8 +73,18 @@ namespace Util
 
 		glGenTextures(1, &_depthAttachment);
 		glBindTexture(GL_TEXTURE_2D, _depthAttachment);
-		glTexStorage2D(GL_TEXTURE_2D, 1, GL_DEPTH_COMPONENT16, _size.x, _size.y);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT16, _size.x, _size.y, 0, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT, NULL);
+
+		glBindTexture(GL_TEXTURE_2D, 0);
+
 		glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, _depthAttachment, 0);
+
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 		//Tell OpenGL which attachments to draw to
 		setGLDrawBuffers();
@@ -76,7 +95,9 @@ namespace Util
 	bool Framebuffer::isComplete() const
 	{
 		glBindFramebuffer(GL_FRAMEBUFFER, _fbo);
-		return glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+		bool complete = glCheckFramebufferStatus(GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		return complete;
 	}
 
 	GLuint Framebuffer::getFBO() const
@@ -103,5 +124,7 @@ namespace Util
 		//*scream*
 		uint32_t s = drawBuffers.size() - 1;
 		glDrawBuffers(s, drawBuffers.data());
+
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
 	}
 }

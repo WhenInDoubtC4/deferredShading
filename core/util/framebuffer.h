@@ -3,7 +3,12 @@
 #include <vector>
 #include <glm/glm.hpp>
 
+#ifdef EMSCRIPTEN
+#include <GLFW/emscripten_glfw3.h>
+#include <GLES3/gl3.h>
+#else
 #include "../ew/external/glad.h"
+#endif
 
 namespace Util
 {
@@ -14,10 +19,10 @@ namespace Util
 		Framebuffer(const glm::vec2& size);
 
 		GLuint addColorAttachment(GLenum colorFormat = GL_RGBA8, 
-			GLint wrapS = GL_CLAMP_TO_BORDER,
-			GLint wrapT = GL_CLAMP_TO_BORDER,
-			GLint magFilter = GL_NEAREST,
-			GLint minFilter = GL_NEAREST);
+			GLint wrapS = GL_CLAMP_TO_EDGE,
+			GLint wrapT = GL_CLAMP_TO_EDGE,
+			GLint magFilter = GL_LINEAR,
+			GLint minFilter = GL_LINEAR);
 		GLuint addDepthAttachment();
 
 		bool isComplete() const;

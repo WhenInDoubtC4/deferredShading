@@ -7,7 +7,13 @@
 #include <string>
 #include <vector>
 #include <glm/glm.hpp>
+
+#ifdef EMSCRIPTEN
+#include <GLFW/emscripten_glfw3.h>
+#include <GLES3/gl3.h>
+#else
 #include "../ew/external/glad.h"
+#endif
 
 namespace Util 
 {
@@ -29,7 +35,12 @@ namespace Util
 		void setVec4(const std::string& name, float x, float y, float z, float w) const;
 		void setVec4(const std::string& name, const glm::vec4& v) const;
 		void setMat4(const std::string& name, const glm::mat4& m) const;
+
+		void setUniformBlock(const std::string& name, int value) const;
+
+#ifndef EMSCRIPTEN
 		void setSubroutine(GLenum shaderType, std::initializer_list<std::pair<std::string, std::string>> nameSelectionList);
+#endif
 
 	private:
 		unsigned int m_id; //Shader program handle

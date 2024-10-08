@@ -1,53 +1,87 @@
-#version 450
+//#version specified in C++
 
-layout(location = 0) out vec3 gPosition;
-layout(location = 1) out vec3 gNormal;
-layout(location = 2) out vec3 gAlbedo;
-layout(location = 3) out vec3 gShadingModel;
+#if __VERSION__ < 400
+precision highp float;
+#endif
 
-in Surface
-{
-	vec3 pos;
-	mat3 tbn;
-	vec2 UV;
-} fs_in;
+layout(location = 0) out vec4 gPosition;
+layout(location = 1) out vec4 gNormal;
+layout(location = 2) out vec4 gAlbedo;
+layout(location = 3) out vec4 gShadingModel;
+	
+in vec3 atr_pos;
+in mat3 atr_tbn;
+in vec2 atr_UV;
 
 uniform vec4 _solidColor;
 uniform sampler2D _mainTex;
 uniform sampler2D _normalTex;
 uniform vec3 _shadingModelColor;
 
-subroutine vec3 AlbedoFunction();
-subroutine vec3 NormalFunction();
+#if __VERSION__ > 400
+subroutine vec4 AlbedoFunction();
+subroutine vec4 NormalFunction();
+#endif
 
-subroutine (AlbedoFunction) vec3 albedoFromTexture()
+#if __VERSION__ > 400
+subroutine (AlbedoFunction) 
+#endif
+vec4 albedoFromTexture()
 {
-	return texture(_mainTex, fs_in.UV).rgb;
+	return vec4(texture(_mainTex, atr_UV).rgb, 1.0);
 }
 
-subroutine (AlbedoFunction) vec3 albedoFromColor()
+#if __VERSION__ > 400
+subroutine (AlbedoFunction)
+#endif
+vec4 albedoFromColor()
 {
-	return _solidColor.rgb;
+	return vec4(_solidColor.rgb, 1.0);
 }
 
-subroutine (NormalFunction) vec3 normalFromTexture()
+#if __VERSION__ > 400
+subroutine (NormalFunction) 
+#endif
+vec4 normalFromTexture()
 {
-	return fs_in.tbn * normalize(texture(_normalTex, fs_in.UV).rgb * 2.0 - 1.0);
+	return vec4(atr_tbn * normalize(texture(_normalTex, atr_UV).rgb * 2.0 - 1.0), 1.0);
 }
 
-subroutine (NormalFunction) vec3 normalFromMesh()
+#if __VERSION__ > 400
+subroutine (NormalFunction) 
+#endif
+vec4 normalFromMesh()
 {
-	return fs_in.tbn * vec3(0.5, 0.5, 0.0);
+	return vec4(atr_tbn * vec3(0.5, 0.5, 0.0), 1.0);
 }
 
+#if __VERSION__ > 400
 subroutine uniform AlbedoFunction _albedoFunction;
 subroutine uniform NormalFunction _normalFunction;
+#else
+uniform int _albedoFunction;
+uniform int _normalFunction;
+#endif
 
 void main()
 {
-	gPosition = fs_in.pos;
+	gPosition = vec4(atr_pos, 1.0);
+
+#if __VERSION__ > 400
 	gAlbedo = _albedoFunction();
-	//gNormal = transpose(fs_in.tbn)[2]; //WS normal form TBN
+#else
+	if (_albedoFunction == 0) gAlbedo = albedoFromTexture();
+	else if (_albedoFunction == 1) gAlbedo = albedoFromColor();
+#endif
+
+	//gNormal = transpose(atr_tbn)[2]; //WS normal form TBN
+
+#if __VERSION__ > 400
 	gNormal = _normalFunction(); //WS normal
-	gShadingModel = _shadingModelColor;
+#else
+	if (_normalFunction == 0) gNormal = normalFromTexture();
+	else if (_normalFunction == 1) gNormal = normalFromMesh();
+#endif
+
+	gShadingModel = vec4(_shadingModelColor, 1.0);
 }

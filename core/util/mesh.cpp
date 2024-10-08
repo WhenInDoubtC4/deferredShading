@@ -3,7 +3,12 @@
 */
 
 #include "mesh.h"
+#ifdef EMSCRIPTEN
+#include <GLFW/emscripten_glfw3.h>
+#include <GLES3/gl3.h>
+#else
 #include "../ew/external/glad.h"
+#endif
 
 #define VERTEX_ATTRIBUTE(index, size, type, normalized, stride, pointer) \
 	glVertexAttribPointer(index, size, type, normalized, stride, reinterpret_cast<const void*>(pointer)); \
