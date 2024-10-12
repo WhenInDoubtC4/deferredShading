@@ -8,12 +8,16 @@ namespace ew {
 		//Only allow movement if right mouse is held
 		if (!glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_2)) {
 			//Release cursor
+#ifndef EMSCRIPTEN
 			glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+#endif
 			firstMouse = true;
 			return;
 		}
+#ifndef EMSCRIPTEN
 		glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-	
+#endif
+
 		//MOUSE AIMING
 		{
 			double mouseX, mouseY;

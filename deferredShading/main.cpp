@@ -6,6 +6,7 @@
 #include <GLFW/emscripten_glfw3.h>
 #include <GLES3/gl3.h>
 #include <emscripten/html5.h>
+#include <emscripten.h>
 #else
 #include <ew/external/glad.h>
 #endif
@@ -127,8 +128,8 @@ void setupScene()
 	//Model setup
 	monkeyModel = new Util::Model("assets/Suzanne.obj");
 	//Using a basic plane mesh from Maya since procGen doesn't calculate TBN
-	planeModel = new Util::Model("assets/plane_new.obj");
-	sphereModel = new Util::Model("assets/sphere_new.obj");
+	planeModel = new Util::Model("assets/plane.obj");
+	sphereModel = new Util::Model("assets/sphere.obj");
 
 	//Load textures
 	brickColorTexture = ew::loadTexture("assets/brick2_color.jpg");
@@ -481,7 +482,7 @@ void loop()
 }
 
 int main() {
-	window = initWindow("Assignment 3", screenWidth, screenHeight);
+	window = initWindow("Deferred shading", screenWidth, screenHeight);
 	glfwSetFramebufferSizeCallback(window, framebufferSizeCallback);
 	createPostprocessFramebuffer(screenWidth, screenHeight);
 	
@@ -498,6 +499,11 @@ int main() {
 	glEnable(GL_CULL_FACE);
 	//glCullFace(GL_BACK);
 	glEnable(GL_DEPTH_TEST);
+
+	resetCamera(&camera, &cameraController);
+	int wWidth, wHeight;
+	glfwGetWindowSize(window, &wWidth, &wHeight);
+	framebufferSizeCallback(window, wWidth, wHeight);
 
 #ifdef EMSCRIPTEN
 	emscripten_set_main_loop(loop, 0, GLFW_FALSE);
@@ -637,9 +643,14 @@ void drawUI() {
 
 void framebufferSizeCallback(GLFWwindow* window, int width, int height)
 {
-	glViewport(0, 0, width, height);
-	screenWidth = width;
-	screenHeight = height;
+	float devicePixelRatio = 1.f;
+#ifdef EMSCRIPTEN
+	devicePixelRatio = emscripten_get_device_pixel_ratio();
+#endif
+
+	glViewport(0, 0, width * devicePixelRatio, height * devicePixelRatio);
+	screenWidth = width * devicePixelRatio;
+	screenHeight = height * devicePixelRatio;
 
 	//Generate new framebuffer with updated size
 	createPostprocessFramebuffer(screenWidth, screenHeight);
@@ -659,11 +670,24 @@ GLFWwindow* initWindow(const char* title, int width, int height) {
 		return nullptr;
 	}
 
-	GLFWwindow* window = glfwCreateWindow(width, height, title, NULL, NULL);
+	float devicePixelRatio = 1.f;
+#ifdef EMSCRIPTEN
+	emscripten_glfw_set_next_window_canvas_selector("#canvas");
+	devicePixelRatio = emscripten_get_device_pixel_ratio();
+#endif
+	GLFWwindow* window = glfwCreateWindow(width * devicePixelRatio, height * devicePixelRatio, title, NULL, NULL);
 	if (window == NULL) {
 		printf("GLFW failed to create window");
 		return nullptr;
 	}
+
+#ifdef EMSCRIPTEN
+	//makes the canvas resizable and match the container
+	emscripten_glfw_make_canvas_resizable(window, "#canvas-container", nullptr);
+	glfwSetWindowAttrib(window, GLFW_SCALE_FRAMEBUFFER, true);
+#endif
+	glfwWindowHint(GLFW_RESIZABLE, GL_TRUE);
+
 	glfwMakeContextCurrent(window);
 
 #ifndef EMSCRIPTEN

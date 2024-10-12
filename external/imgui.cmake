@@ -2,7 +2,7 @@
 string(TIMESTAMP BEFORE "%s")
 CPMAddPackage(
         NAME IMGUI
-        URL "https://github.com/ocornut/imgui/archive/refs/tags/v1.89.2.zip"
+        URL "https://github.com/ocornut/imgui/archive/refs/tags/v1.91.3.zip"
 )
 IF(IMGUI_ADDED)
     add_library(IMGUI STATIC)

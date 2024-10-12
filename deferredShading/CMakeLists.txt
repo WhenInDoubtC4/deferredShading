@@ -24,7 +24,7 @@ endif()
 if (EMSCRIPTEN)
 	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -s ASYNCIFY -s ASSERTIONS=1 -s ALLOW_MEMORY_GROWTH=1 -s FULL_ES3=1 -s USE_GLFW=3")
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -s ASYNCIFY -s ASSERTIONS=1 -s ALLOW_MEMORY_GROWTH=1 -s FULL_ES3=1 -s USE_GLFW=3")
-	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -sMIN_WEBGL_VERSION=2 -sNO_DISABLE_EXCEPTION_CATCHING -s ASSERTIONS=1 -s SAFE_HEAP=1")
+	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -sMIN_WEBGL_VERSION=2 -sNO_DISABLE_EXCEPTION_CATCHING -s ASSERTIONS=1 -s SAFE_HEAP=1 --use-port=contrib.glfw3 --shell-file ${CMAKE_CURRENT_LIST_DIR}/shell.html")
 	set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS}\
 	--preload-file ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/../assets/brick_color.jpg\
 	--preload-file ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/../assets/brick2_color.jpg\
@@ -36,13 +36,12 @@ if (EMSCRIPTEN)
 	--preload-file ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/../assets/lightVolume.frag\
 	--preload-file ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/../assets/lit.frag\
 	--preload-file ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/../assets/lit.vert\
-	--preload-file ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/../assets/plane_new.obj\
+	--preload-file ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/../assets/plane.obj\
 	--preload-file ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/../assets/postprocess.frag\
 	--preload-file ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/../assets/postprocess.vert\
 	--preload-file ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/../assets/rock_color.jpg\
 	--preload-file ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/../assets/rock_normal.jpg\
-	--preload-file ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/../assets/sphere_new.obj\
-	--preload-file ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/../assets/Suzanne.fbx\
+	--preload-file ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/../assets/sphere.obj\
 	--preload-file ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/../assets/Suzanne.obj\
 	")
 else()
@@ -60,8 +59,7 @@ if(EMSCRIPTEN)
     set_target_properties(deferredShading PROPERTIES LINK_FLAGS "-s USE_GLFW=3 -s USE_WEBGL2=1 -s FULL_ES3=1")
 endif()
 
-target_link_libraries(deferredShading PUBLIC core IMGUI assimp)
-target_link_options(deferredShading PRIVATE "-Wno-error=unused-command-line-argument")
+target_link_libraries(deferredShading PUBLIC glfw3 core IMGUI assimp)
 target_include_directories(deferredShading PUBLIC ${CORE_INC_DIR} ${stb_INCLUDE_DIR})
 
 #Trigger asset copy when assignment0 is built

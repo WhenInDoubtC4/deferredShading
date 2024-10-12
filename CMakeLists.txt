@@ -13,6 +13,20 @@ endif()
 
 project(EWRender)
 
+if (${CMAKE_SYSTEM_NAME} STREQUAL "Emscripten")
+    option(BUILD_HTML "Build html also!" ON)
+    set(EMSCRIPTEN TURE)
+    set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE BOTH)
+    set(CMAKE_TOOLCHAIN_FILE "${EMSCRIPTEN_ROOT_PATH}/cmake/Modules/Platform/Emscripten.cmake")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Oz -s USE_SDL=0")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Oz -s USE_SDL=0")
+    file(GLOB HTML "${CMAKE_CURRENT_SOURCE_DIR}/html/*")
+    file(COPY ${HTML} DESTINATION ${CMAKE_BINARY_DIR}/bin/)
+
+    #Prevent linking windows libraries
+    set(CMAKE_CXX_STANDARD_LIBRARIES "")
+endif()
+
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/libs)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/libs)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)

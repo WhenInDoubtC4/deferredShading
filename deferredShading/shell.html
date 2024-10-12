@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="EN-us">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+
+    <title>emscripten glfw</title>
+
+    <style>
+        body {
+            margin: 0;
+            background-color: black;
+            width: 100%;
+            height: 100vh;
+            font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+            font-size: clamp(17px, 1.063rem + ((1vw - 3.2px) * 0.25), 21px);
+            letter-spacing: -0.011em;
+            line-height: calc( 1.5em );
+        }
+
+        .emscripten {
+            position: absolute;
+            top: 0;
+            left: 0;
+            margin: 0;
+            border: 0;
+            overflow: hidden;
+            display: block;
+        }
+
+        #canvas:focus {
+            outline: none;
+        }
+
+        #status {
+            /* display: inline-block;
+            vertical-align: top; */
+            margin-top: 30px;
+            margin-left: 20px;
+            color: #ffffff;
+        }
+
+        #progress {
+            height: 20px;
+            width: 300px;
+        }
+
+        .spinner {
+            height: 30px;
+            width: 30px;
+            margin: 0;
+            margin-top: 20px;
+            margin-left: 20px;
+            display: inline-block;
+            vertical-align: top;
+            -webkit-animation: rotation .8s linear infinite;
+            -moz-animation: rotation .8s linear infinite;
+            -o-animation: rotation .8s linear infinite;
+            animation: rotation 0.8s linear infinite;
+            border-left: 5px solid rgb(235, 235, 235);
+            border-right: 5px solid rgb(235, 235, 235);
+            border-bottom: 5px solid rgb(235, 235, 235);
+            border-top: 5px solid rgb(120, 120, 120);
+            border-radius: 100%;
+        }
+
+        @-webkit-keyframes rotation {
+            from {
+                -webkit-transform: rotate(0deg);
+            }
+
+            to {
+                -webkit-transform: rotate(360deg);
+            }
+        }
+
+        @-moz-keyframes rotation {
+            from {
+                -moz-transform: rotate(0deg);
+            }
+
+            to {
+                -moz-transform: rotate(360deg);
+            }
+        }
+
+        @-o-keyframes rotation {
+            from {
+                -o-transform: rotate(0deg);
+            }
+
+            to {
+                -o-transform: rotate(360deg);
+            }
+        }
+
+        @keyframes rotation {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .loader {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            left: 0;
+            top: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        .bottom-bar {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: calc(100% - 10px);
+            height: calc(100% - 10px);
+            display: flex;
+            justify-content: flex-end;
+            align-items: flex-end;
+            flex-direction: column;
+        }
+
+        .cloak {
+            display: none;
+        }
+
+        .exgb-button {
+            display: inline-flex;
+            align-items: center;
+            column-gap: 0.5em;
+            padding-top: 15px;
+            padding-right: 20px;
+            padding-bottom: 15px;
+            padding-left: 20px;
+            border: 2px solid;
+            border-color: #ffffff;
+            color: #ffffff;
+        }
+
+        .exgb-button:hover {
+            border-color: #ffffff;
+            background-color: #FFFFFF;
+            color: #1d201f;
+            cursor: pointer;
+        }
+
+        .fullscreen-button {
+            position: absolute;
+            right: 10px;
+            bottom: 10px;
+            width: 32px;
+            height: 32px;
+            z-index: 2;
+        }
+
+        .fullscreen-button:hover {
+            background-color: #1d201f;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="loader">
+        <div class="spinner cloak" id='spinner'></div>
+        <progress value="0" max="100" id="progress" hidden=1></progress>
+        <div class="cloak" id="status">Downloading...</div>
+        <span class="exgb-button" id="play-button">Launch</span>
+    </div>
+
+    <div class="fullscreen-button" onclick="Module.requestFullscreen(false, true)">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="white" class="size-6"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" /></svg>
+    </div>
+
+    <div id="canvas-container" style="width: 100%; height: 100vh;">
+        <canvas class="emscripten" id="canvas" oncontextmenu="event.preventDefault()"></canvas>
+    </div>
+
+    <script type='text/javascript'>
+        var statusElement = document.getElementById('status');
+        var progressElement = document.getElementById('progress');
+        var spinnerElement = document.getElementById('spinner');
+
+        var Module = {
+            setStatus: (text) => {
+                Module.setStatus.last ??= { time: Date.now(), text: '' };
+                if (text === Module.setStatus.last.text) return;
+                var m = text.match(/([^(]+)\((\d+(\.\d+)?)\/(\d+)\)/);
+                var now = Date.now();
+                if (m && now - Module.setStatus.last.time < 30) return; // if this is a progress update, skip it if too soon
+                Module.setStatus.last.time = now;
+                Module.setStatus.last.text = text;
+                if (m) {
+                    text = m[1];
+                    progressElement.value = parseInt(m[2]) * 100;
+                    progressElement.max = parseInt(m[4]) * 100;
+                    progressElement.hidden = false;
+                    spinnerElement.hidden = false;
+                } else {
+                    progressElement.value = null;
+                    progressElement.max = null;
+                    progressElement.hidden = true;
+                    if (!text) spinnerElement.style.display = 'none';
+                }
+                statusElement.innerHTML = text;
+            },
+            totalDependencies: 0,
+            monitorRunDependencies: (left) => {
+                this.totalDependencies = Math.max(this.totalDependencies, left);
+                Module.setStatus(left ? 'Preparing... (' + (this.totalDependencies - left) + '/' + this.totalDependencies + ')' : 'All downloads complete.');
+            }
+        };
+        Module.setStatus('Downloading...');
+    </script>
+    {{{ SCRIPT }}}
+    <script>
+        const playButton = document.getElementById("play-button");
+        const spinner = document.getElementById("spinner");
+        const status = document.getElementById("status");
+
+        playButton.addEventListener("click", () => {
+            launch();
+            spinner.classList.remove("cloak");
+            status.classList.remove("cloak");
+            playButton.style.display = "none";
+        });
+    </script>
+</body>
+</html>
